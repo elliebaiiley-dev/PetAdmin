@@ -59,7 +59,8 @@ Push the Emergent code to GitHub:
    | `MONGO_URL` | the Atlas connection string from step 1.5 |
    | `DB_NAME` | `petadmin` |
    | `JWT_SECRET` | long random string, min 32 chars (run `python3 -c "import secrets; print(secrets.token_urlsafe(48))"` locally). **The API will refuse to boot without this.** |
-   | `CORS_ALLOWED_ORIGINS` | your Vercel URL(s), comma-separated, no trailing slash. E.g. `https://petadmin.co.uk,https://www.petadmin.co.uk`. Use `*` only during initial Railway smoke-testing, then tighten. |
+   | `CORS_ALLOWED_ORIGINS` | your Vercel URL(s), comma-separated, no trailing slash. E.g. `https://petadmin.co.uk,https://www.petadmin.co.uk,https://app-frontend-git-main-pet-admin.vercel.app`. Use `*` only during initial Railway smoke-testing, then tighten. |
+   | `CORS_ALLOWED_ORIGIN_REGEX` | *(optional but recommended for Vercel)* a regex that matches rotating preview-deploy URLs. For a Vercel project named `app-frontend` in the `pet-admin` team, use `^https://app-frontend-[a-z0-9]+-pet-admin\.vercel\.app$`. Must anchor with `^…$`. Leave blank if you only use a stable custom domain. |
    | `STRIPE_API_KEY` | your `sk_test_...` or `sk_live_...` from Stripe dashboard |
    | `STRIPE_WEBHOOK_SECRET` | fill in at step 5 (until then the webhook endpoint will return `503` — this is the safe default and protects your subscriptions from forged events) |
    | `STRIPE_PRICE_AMOUNT_GBP` | `1299` |
@@ -199,6 +200,6 @@ Nothing to change — just deploy and go.
 
 - Vercel build failing: `vercel.json` and `yarn.lock` must both be committed; check the Vercel build log — missing env vars show up as console warnings but shouldn't fail the build.
 - Railway "502 Bad Gateway": the Python app crashed. Open logs — usually a bad `MONGO_URL` or missing `JWT_SECRET`.
-- CORS errors in the browser console: your `EXPO_PUBLIC_BACKEND_URL` is wrong, or your Vercel domain isn't in `CORS_ALLOWED_ORIGINS` on Railway. Add the exact origin (scheme + host, no trailing slash) and redeploy.
+- CORS errors in the browser console: your `EXPO_PUBLIC_BACKEND_URL` is wrong, or the Vercel origin isn't covered by `CORS_ALLOWED_ORIGINS` / `CORS_ALLOWED_ORIGIN_REGEX` on Railway. Add the exact origin (scheme + host, no trailing slash) to the list, or set the regex to match Vercel's rotating preview URLs (see step 2 variable table). Redeploy Railway for the env change to apply.
 - Stripe webhook returns 503: `STRIPE_WEBHOOK_SECRET` is empty on Railway — set it (step 5) and redeploy. This 503 is a deliberate safety: without a signing secret the endpoint cannot verify events, so it refuses them.
 - Stripe checkout gives "Invalid API key": you still have `sk_test_emergent` in Railway — swap it for your real key (step 8).

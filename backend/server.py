@@ -38,10 +38,15 @@ if not JWT_SECRET or len(JWT_SECRET) < 32:
     )
 JWT_ALG = "HS256"
 JWT_EXPIRE_DAYS = 30
-# CORS: a comma-separated allowlist. "*" is allowed in dev only; in production
-# set CORS_ALLOWED_ORIGINS=https://yourdomain.com,https://www.yourdomain.com.
+# ---------- CORS ----------
+# Two complementary mechanisms:
+#   1. CORS_ALLOWED_ORIGINS — comma-separated exact origins (prod + staging).
+#   2. CORS_ALLOWED_ORIGIN_REGEX — a single regex that catches rotating
+#      preview URLs (Vercel generates a new hash per deploy).
+# Set at least one in production. Defaults to "*" in dev only.
 _cors_env = (os.environ.get("CORS_ALLOWED_ORIGINS") or "*").strip()
 CORS_ALLOWED_ORIGINS = [o.strip() for o in _cors_env.split(",") if o.strip()] or ["*"]
+CORS_ALLOWED_ORIGIN_REGEX = (os.environ.get("CORS_ALLOWED_ORIGIN_REGEX") or "").strip() or None
 
 EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY")
 STORAGE_BASE = (os.environ.get("INTEGRATION_PROXY_URL") or "").strip() or "https://integrations.emergentagent.com"
@@ -1594,12 +1599,46 @@ async def root():
 # Mount router + CORS
 app.include_router(api)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=CORS_ALLOWED_ORIGINS,
-    allow_methods=["*"],
-    allow_headers=["*"],
+# CORS middleware — explicit so preflight (OPTIONS) and credentials behave
+# correctly across the Vercel preview-URL churn.
+#
+# Rules of thumb we follow:
+#   * `allow_origins=["*"]` is INCOMPATIBLE with `allow_credentials=True`
+#     (browsers reject it). PetAdmin uses bearer tokens in headers, not
+#     cookies, so credentials aren't actually required — we only enable
+#     them when the operator has configured a real origin allowlist.
+#   * `allow_origin_regex` is the only reliable way to cover Vercel's
+#     rotating per-deploy preview URLs
+#     (e.g. app-frontend-<hash>-pet-admin.vercel.app).
+_cors_kwargs: Dict[str, Any] = {
+    "allow_methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    "allow_headers": [
+        "Authorization",
+        "Content-Type",
+        "Accept",
+        "Origin",
+        "X-Requested-With",
+    ],
+    "expose_headers": ["Content-Disposition"],  # so the frontend can read the CSV filename
+    "max_age": 600,
+}
+_wildcard_only = CORS_ALLOWED_ORIGINS == ["*"] and not CORS_ALLOWED_ORIGIN_REGEX
+if _wildcard_only:
+    # Dev / preview: let any origin in but drop credentials to stay compliant.
+    _cors_kwargs["allow_origins"] = ["*"]
+    _cors_kwargs["allow_credentials"] = False
+else:
+    _cors_kwargs["allow_origins"] = [o for o in CORS_ALLOWED_ORIGINS if o != "*"]
+    if CORS_ALLOWED_ORIGIN_REGEX:
+        _cors_kwargs["allow_origin_regex"] = CORS_ALLOWED_ORIGIN_REGEX
+    _cors_kwargs["allow_credentials"] = True
+
+app.add_middleware(CORSMiddleware, **_cors_kwargs)
+log.info(
+    "CORS configured: origins=%s regex=%s credentials=%s",
+    _cors_kwargs.get("allow_origins"),
+    _cors_kwargs.get("allow_origin_regex"),
+    _cors_kwargs.get("allow_credentials"),
 )
 
 
